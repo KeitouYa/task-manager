@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Task Manager</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    h1, h2 { margin-top: 1.5rem; }
+    section { border: 1px solid #ddd; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }
+    label { display: block; margin-top: 0.5rem; font-size: 0.9rem; }
+    input, select, textarea { width: 100%; padding: 0.4rem; box-sizing: border-box; }
+    button { margin-top: 0.75rem; padding: 0.5rem 1rem; cursor: pointer; }
+    .row { display: flex; gap: 1rem; }
+    .row > * { flex: 1; }
+    .task { border-bottom: 1px solid #eee; padding: 0.5rem 0; }
+    .task:last-child { border-bottom: none; }
+    .meta { font-size: 0.85rem; color: #666; }
+    .error { color: #b00; margin-top: 0.5rem; white-space: pre-wrap; }
+    .ok { color: #060; margin-top: 0.5rem; }
+    .actions button { margin-right: 0.5rem; margin-top: 0.25rem; }
+  </style>
+</head>
+<body>
+
+<h1>Task Manager</h1>
+
+<section>
+  <h2>AI suggest</h2>
+  <p class="meta">Describe a task in plain language. The AI returns a preview — click "Use this" to fill the form below.</p>
+  <label>Text
+    <input id="suggestText" placeholder="remind me to submit the quarterly report before Friday" />
+  </label>
+  <button id="suggestBtn">Suggest</button>
+  <div id="suggestMsg"></div>
+  <pre id="suggestPreview" style="background:#f6f6f6;padding:0.5rem;display:none;"></pre>
+  <button id="useSuggestionBtn" style="display:none;">Use this</button>
+</section>
+
+<section>
+  <h2>Create task</h2>
+  <label>Title<input id="title" /></label>
+  <label>Description<textarea id="description" rows="2"></textarea></label>
+  <div class="row">
+    <label>Due date<input id="dueDate" type="date" /></label>
+    <label>Priority
+      <select id="priority">
+        <option value="">(default)</option>
+        <option>LOW</option><option>MEDIUM</option><option>HIGH</option>
+      </select>
+    </label>
+    <label>Status
+      <select id="status">
+        <option value="">(default)</option>
+        <option>TODO</option><option>IN_PROGRESS</option><option>DONE</option>
+      </select>
+    </label>
+  </div>
+  <button id="createBtn">Create</button>
+  <div id="createMsg"></div>
+</section>
+
+<section>
+  <h2>Tasks</h2>
+  <button id="refreshBtn">Refresh</button>
+  <div id="tasks"></div>
+</section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let lastSuggestion = null;
+
+  async function api(method, path, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    const text = await res.text();
+    const data = text ? JSON.parse(text) : null;
+    if (!res.ok) {
+      const msg = data?.message || res.statusText;
+      const fields = data?.fieldErrors?.map(f => `${f.field}: ${f.message}`).join('\n');
+      throw new Error(fields ? `${msg}\n${fields}` : msg);
+    }
+    return data;
+  }
+
+  function show(el, kind, text) {
+    el.className = kind;
+    el.textContent = text;
+  }
+
+  async function loadTasks() {
+    const list = $('tasks');
+    list.textContent = 'Loading...';
+    try {
+      const tasks = await api('GET', '/tasks');
+      if (tasks.length === 0) { list.textContent = 'No tasks yet.'; return; }
+      list.innerHTML = '';
+      for (const t of tasks) {
+        const div = document.createElement('div');
+        div.className = 'task';
+        div.innerHTML = `
+          <strong>${escape(t.title)}</strong>
+          <div class="meta">#${t.id} · ${t.priority} · ${t.status}${t.dueDate ? ' · due ' + t.dueDate : ''}</div>
+          ${t.description ? `<div>${escape(t.description)}</div>` : ''}
+          <div class="actions">
+            <button data-id="${t.id}" class="del">Delete</button>
+          </div>`;
+        list.appendChild(div);
+      }
+      list.querySelectorAll('.del').forEach(b => b.onclick = () => deleteTask(b.dataset.id));
+    } catch (e) {
+      list.innerHTML = `<div class="error">${escape(e.message)}</div>`;
+    }
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  async function deleteTask(id) {
+    try {
+      await api('DELETE', `/tasks/${id}`);
+      await loadTasks();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  $('createBtn').onclick = async () => {
+    const msg = $('createMsg');
+    const body = {
+      title: $('title').value,
+      description: $('description').value || null,
+      dueDate: $('dueDate').value || null,
+      priority: $('priority').value || null,
+      status: $('status').value || null
+    };
+    try {
+      await api('POST', '/tasks', body);
+      show(msg, 'ok', 'Created.');
+      $('title').value = '';
+      $('description').value = '';
+      $('dueDate').value = '';
+      $('priority').value = '';
+      $('status').value = '';
+      await loadTasks();
+    } catch (e) {
+      show(msg, 'error', e.message);
+    }
+  };
+
+  $('suggestBtn').onclick = async () => {
+    const msg = $('suggestMsg');
+    const preview = $('suggestPreview');
+    const useBtn = $('useSuggestionBtn');
+    preview.style.display = 'none';
+    useBtn.style.display = 'none';
+    show(msg, '', 'Calling AI...');
+    try {
+      const suggestion = await api('POST', '/tasks/suggest', { text: $('suggestText').value });
+      lastSuggestion = suggestion;
+      preview.textContent = JSON.stringify(suggestion, null, 2);
+      preview.style.display = 'block';
+      useBtn.style.display = 'inline-block';
+      show(msg, 'ok', 'Suggestion ready.');
+    } catch (e) {
+      show(msg, 'error', e.message);
+    }
+  };
+
+  $('useSuggestionBtn').onclick = () => {
+    if (!lastSuggestion) return;
+    $('title').value = lastSuggestion.title || '';
+    $('description').value = lastSuggestion.description || '';
+    $('dueDate').value = lastSuggestion.dueDate || '';
+    $('priority').value = lastSuggestion.priority || '';
+    $('status').value = lastSuggestion.status || '';
+  };
+
+  $('refreshBtn').onclick = loadTasks;
+
+  loadTasks();
+</script>
+
+</body>
+</html>
