@@ -7,7 +7,8 @@ A Spring Boot REST API for a personal task manager, with an AI-powered endpoint 
 Requires Java 17.
 
 ```bash
-git clone <repo>
+git clone https://github.com/KeitouYa/task-manager.git
+
 cd task-manager
 # macOS / Linux
 ./mvnw spring-boot:run
@@ -32,14 +33,14 @@ If the key is missing or blank, the app still boots and CRUD still works. Only `
 
 ## API
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/tasks` | Create a task |
-| `GET` | `/tasks` | List all tasks |
-| `GET` | `/tasks/{id}` | Get one task |
-| `PUT` | `/tasks/{id}` | Update a task (full replace) |
-| `DELETE` | `/tasks/{id}` | Delete a task |
-| `POST` | `/tasks/suggest` | AI: natural language → task preview (not persisted) |
+| Method   | Path             | Description                                         |
+| -------- | ---------------- | --------------------------------------------------- |
+| `POST`   | `/tasks`         | Create a task                                       |
+| `GET`    | `/tasks`         | List all tasks                                      |
+| `GET`    | `/tasks/{id}`    | Get one task                                        |
+| `PUT`    | `/tasks/{id}`    | Update a task (full replace)                        |
+| `DELETE` | `/tasks/{id}`    | Delete a task                                       |
+| `POST`   | `/tasks/suggest` | AI: natural language → task preview (not persisted) |
 
 ### Create a task
 
